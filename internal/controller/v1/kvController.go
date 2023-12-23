@@ -1,24 +1,15 @@
-package main
+package v1
 
 import (
 	"errors"
 	"github.com/gorilla/mux"
 	"io"
-	"log"
+	domainError "kv-store/internal/error"
+	kvStore "kv-store/internal/service"
 	"net/http"
-	"sync"
 )
 
-var store = struct {
-	m map[string]string
-	sync.RWMutex
-}{m: make(map[string]string)}
-
-var ErrorNoSuchKey = errors.New("No such key")
-
-func main() {
-	r := mux.NewRouter()
-
+func Init(r *mux.Router) {
 	r.HandleFunc("/", helloHandler)
 
 	r.HandleFunc("/v1/key/{key}", keyValuePutHandler).
@@ -32,8 +23,6 @@ func main() {
 	r.HandleFunc("/v1/key/{key}", keyValueDeleteHandler).
 		Methods("DELETE").
 		Schemes("http", "https")
-
-	log.Fatal(http.ListenAndServe(":8080", r))
 }
 
 func keyValuePutHandler(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +37,7 @@ func keyValuePutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = Put(key, string(value))
+	err = kvStore.Put(key, string(value))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -61,8 +50,8 @@ func keyValueGetHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 
-	res, err := Get(key)
-	if errors.Is(err, ErrorNoSuchKey) {
+	res, err := kvStore.Get(key)
+	if errors.Is(err, domainError.ErrorNoSuchKey) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -78,7 +67,7 @@ func keyValueDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 
-	err := Delete(key)
+	err := kvStore.Delete(key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -89,31 +78,4 @@ func keyValueDeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hello w#rld!\n"))
-}
-
-func Put(key string, value string) error {
-	store.Lock()
-	store.m[key] = value
-	store.Unlock()
-
-	return nil
-}
-
-func Get(key string) (string, error) {
-	store.RLock()
-	value, ok := store.m[key]
-	store.RUnlock()
-	if !ok {
-		return "", ErrorNoSuchKey
-	}
-
-	return value, nil
-}
-
-func Delete(key string) error {
-	store.Lock()
-	delete(store.m, key)
-	store.Unlock()
-
-	return nil
 }
