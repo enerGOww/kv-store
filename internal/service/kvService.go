@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+//TODO тесты
+
 var store = struct {
 	m map[string]string
 	sync.RWMutex

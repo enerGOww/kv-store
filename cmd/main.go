@@ -10,7 +10,10 @@ import (
 func main() {
 	r := mux.NewRouter()
 
-	v1.Init(r)
+	err := v1.Init(r)
+	if err != nil {
+		log.Fatal("initializing error: %w", err)
+	}
 
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
