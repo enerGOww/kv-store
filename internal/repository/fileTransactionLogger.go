@@ -2,9 +2,12 @@ package repository
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"kv-store/internal/event"
 	"os"
+	"sync"
 )
 
 //TODO тесты
@@ -20,6 +23,7 @@ type FileTransactionLogger struct {
 	errors       <-chan error
 	lastSequence uint64
 	file         *os.File
+	wg           sync.WaitGroup
 }
 
 func NewTransactionLogger(fileName string) (TransactionLogger, error) {
@@ -32,6 +36,7 @@ func NewTransactionLogger(fileName string) (TransactionLogger, error) {
 }
 
 func (l *FileTransactionLogger) WritePut(key string, value string) {
+	l.wg.Add(1)
 	l.events <- event.TransactionEvent{
 		EventType: event.EventPut,
 		Key:       key,
@@ -40,17 +45,18 @@ func (l *FileTransactionLogger) WritePut(key string, value string) {
 }
 
 func (l *FileTransactionLogger) WriteDelete(key string) {
+	l.wg.Add(1)
 	l.events <- event.TransactionEvent{
 		EventType: event.EventDelete,
 		Key:       key,
 	}
 }
 
-func (l FileTransactionLogger) Err() <-chan error {
+func (l *FileTransactionLogger) Err() <-chan error {
 	return l.errors
 }
 
-func (l FileTransactionLogger) Run() {
+func (l *FileTransactionLogger) Run() {
 	events := make(chan event.TransactionEvent, 16)
 	l.events = events
 
@@ -71,11 +77,13 @@ func (l FileTransactionLogger) Run() {
 				errors <- err
 				return
 			}
+
+			l.wg.Done()
 		}
 	}()
 }
 
-func (l FileTransactionLogger) ReadEvent() (<-chan event.TransactionEvent, <-chan error) {
+func (l *FileTransactionLogger) ReadEvent() (<-chan event.TransactionEvent, <-chan error) {
 	scanner := bufio.NewScanner(l.file)
 	outEvent := make(chan event.TransactionEvent)
 	outError := make(chan error, 1)
@@ -112,4 +120,34 @@ func (l FileTransactionLogger) ReadEvent() (<-chan event.TransactionEvent, <-cha
 	}()
 
 	return outEvent, outError
+}
+
+func (l *FileTransactionLogger) Close(ctx context.Context) error {
+	completing := make(chan struct{})
+	errCh := make(chan error)
+
+	go func() {
+		l.wg.Wait()
+
+		if l.events != nil {
+			close(l.events)
+		}
+
+		err := l.file.Close()
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		completing <- struct{}{}
+	}()
+
+	select {
+	case <-completing:
+		return nil
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return errors.New("Graceful shutdown timeout")
+	}
 }

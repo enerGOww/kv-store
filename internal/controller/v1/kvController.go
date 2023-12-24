@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"io"
+	"kv-store/internal/closer"
 	domainError "kv-store/internal/error"
 	"kv-store/internal/event"
 	"kv-store/internal/repository"
@@ -41,6 +42,8 @@ func initTransactionLog() error {
 	if err != nil {
 		return fmt.Errorf("failed to create event logger: %w", err)
 	}
+
+	closer.Closer.Add(transactionRepository.Close)
 
 	events, eventErrors := transactionRepository.ReadEvent()
 	e, ok := event.TransactionEvent{}, true

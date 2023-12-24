@@ -1,6 +1,9 @@
 package repository
 
-import "kv-store/internal/event"
+import (
+	"context"
+	"kv-store/internal/event"
+)
 
 type TransactionLogger interface {
 	WriteDelete(key string)
@@ -8,4 +11,5 @@ type TransactionLogger interface {
 	Err() <-chan error
 	Run()
 	ReadEvent() (<-chan event.TransactionEvent, <-chan error)
+	Close(context.Context) error
 }
